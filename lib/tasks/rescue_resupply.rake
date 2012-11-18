@@ -2,6 +2,7 @@
 require 'csv'
 task :rescue_resupply => :environment do
 
+=begin
 	#Read in all BT patients, so we can map prior system key to BT id's
 	CSV.foreach(Rails.root.join('tmp', 'input','non_va_patients.csv'), :force_quotes => true) do |row|
 		puts row[3] if row[3].present?
@@ -24,12 +25,12 @@ task :rescue_resupply => :environment do
 			patient.save
 		end
 	end
-
+=end
 
 	all_patients = Array.new
 
 	#Read in all BT patients with E0601, E0470, and E0471 HCPC sales orders
-	csv_string = CSV.open("./tmp/output/patients_with_blowers.csv", "wb") do |csv|
+	csv_string = CSV.open("./tmp/output/patients_with_cpap_devices.csv", "wb") do |csv|
 		csv << ["Brightree ID", "First Name", "Last Name", "Address 1", "Address 2", "City", "State", "Zip Code", "Phone", "Mobile Phone", "Email", "Fax", "User4"]
 
 		CSV.foreach(Rails.root.join('tmp','input','bt_blower_sales_orders.csv')) do |row|
@@ -52,12 +53,27 @@ task :rescue_resupply => :environment do
 		puts "BT patients with blowers #{num_bt_patients_with_blowers}"
 
 		# Get Boom records to get all patients who have received E0470, E0471 or E0601 ever
-		boom_txns = Boomtxn.where( "( HCPC = 'E0471' or HCPC = 'E0470' or HCPC = 'E0601' ) and TransType = 'Dispense' ")
+		boom_txns = Boomtxn.where(" HCPC = 'E0471' or HCPC = 'E0470' or HCPC = 'E0601' ")
 
 		for txn in boom_txns
-			pt = Patient.find_by_prior_system_key( txn.PatientID )
+			if txn.PatientID.try(:length) == 5
+				psk = '00' + txn.PatientID 
+			elsif txn.PatientID.try(:length) == 6
+				psk = '0' + txn.PatientID
+			else
+				psk = '0'
+			end
+
+			pt = Patient.find_by_prior_system_key( psk )
 			unless( pt.nil? || all_patients.include?( pt ) )
 				all_patients << pt
+
+				if GeoState.find_by_id( pt.billing_geo_state_id).nil?
+					state = ""
+				else
+					state = GeoState.find_by_id( pt.billing_geo_state_id).abbrev
+				end
+
 				csv << [pt.brightree_id, pt.first_name, pt.last_name, pt.billing_address1, pt.billing_address2, pt.billing_city, state, pt.billing_postal_code, pt.billing_phone, pt.mobile_phone, pt.email, pt.fax, pt.user4]
 			end
 		end
